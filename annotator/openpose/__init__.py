@@ -354,5 +354,4 @@ class OpenposeDetector:
         if json_pose_callback:
             json_pose_callback(encode_poses_as_json(poses, H, W))
         poses = draw_poses(poses, H, W, draw_body=include_body, draw_hand=include_hand, draw_face=include_face)
-        print(poses.shape)
         return poses

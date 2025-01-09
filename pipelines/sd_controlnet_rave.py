@@ -3,19 +3,39 @@ import os
 import PIL
 import torch
 import warnings
+
+
 warnings.filterwarnings("ignore")
 
 from transformers import set_seed
 from tqdm import tqdm
 from transformers import logging
 from diffusers import ControlNetModel, StableDiffusionControlNetImg2ImgPipeline, DDIMScheduler
+from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
+from safetensors import safe_open
 
 import torch.nn as nn
 import numpy as np
+from PIL import Image
+
 import utils.feature_utils as fu
 import utils.preprocesser_utils as pu
 import utils.image_process_utils as ipu
 
+from .utils import is_torch2_available
+
+if is_torch2_available():
+    from .attention_processor import (
+        AttnProcessor2_0 as AttnProcessor,
+    )
+    from .attention_processor import (
+        CNAttnProcessor2_0 as CNAttnProcessor,
+    )
+    from .attention_processor import (
+        IPAttnProcessor2_0 as IPAttnProcessor,
+    )
+else:
+    from .attention_processor import AttnProcessor, CNAttnProcessor, IPAttnProcessor
 
 logging.set_verbosity_error()
 

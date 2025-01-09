@@ -213,7 +213,10 @@ preprocessors_dict = {
 }
 
 def pixel_perfect_process(input_image, p_name):
-    raw_H, raw_W, _ = input_image.shape
+    if len(input_image.shape) == 3:
+        raw_H, raw_W, _ = input_image.shape
+    if len(input_image.shape) == 4:
+        _, raw_H, raw_W, _ = input_image.shape
     preprocessor_resolution = raw_H
     detected_map, _ = preprocessors_dict[p_name](input_image, res=preprocessor_resolution)
     return detected_map

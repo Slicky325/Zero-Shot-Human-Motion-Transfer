@@ -18,7 +18,6 @@ import torch.nn as nn
 import numpy as np
 from PIL import Image
 
-import utils.constants as const
 import utils.feature_utils as fu
 import utils.preprocesser_utils as pu
 import utils.image_process_utils as ipu
@@ -247,6 +246,12 @@ class IPA_RAVE_MultiControlNet(nn.Module):
 
 
     @torch.no_grad()
+    def image_prompt_process(self, image_prompt_pil):
+        depth_map = pu.pixel_perfect_process(np.array(image_prompt_pil, dtype='uint8'), self.preprocess_name_1)
+        depth_img = PIL.Image.fromarray(depth_map).convert("L")
+        return(depth_img)
+    
+    @torch.no_grad()
     def preprocess_control_grid(self, image_pil):
         list_of_image_pils = fu.pil_grid_to_frames(image_pil, grid_size=self.grid) # List[C, W, H] -> len = num_frames
         list_of_pils_1, list_of_pils_2 = [], []
@@ -255,14 +260,14 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             frame_pil_2 = pu.pixel_perfect_process(np.array(frame_pil, dtype='uint8'), self.preprocess_name_2)
             list_of_pils_1.append(frame_pil_1)
             list_of_pils_2.append(frame_pil_2)
-        control_images_1 = np.array(list_of_pils_1)
-        control_images_2 = np.array(list_of_pils_2)
+        control_images_1 = np.array(list_of_pils_1, dtype='uint8')
+        control_images_2 = np.array(list_of_pils_2, dtype='uint8')
         
         control_img_1 = ipu.create_grid_from_numpy(control_images_1, grid_size=self.grid)
-        control_img_1 = PIL.Image.fromarray(control_img_1).convert("L")
+        control_img_1 = PIL.Image.fromarray(control_img_1.astype(np.uint8)).convert("L")
         
         control_img_2 = ipu.create_grid_from_numpy(control_images_2, grid_size=self.grid)
-        control_img_2 = PIL.Image.fromarray(control_img_2).convert("L")
+        control_img_2 = PIL.Image.fromarray(control_img_2.astype(np.uint8))
 
         return control_img_1, control_img_2
     
@@ -539,6 +544,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             
         image = Image.open(self.image_path)
         pil_image = image.resize((256, 256))    
+        control_pil_image = self.image_prompt_process(pil_image)
 
         if pil_image is not None:
             num_prompts = 1 if isinstance(pil_image, Image.Image) else len(pil_image)
@@ -566,14 +572,25 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
+        
+        control_image_prompt_embeds, control_uncond_image_prompt_embeds = self.get_image_embeds(
+            pil_image=control_pil_image, clip_image_embeds=self.clip_image_embeds
+        )
+        
+        control_bs_embed, control_seq_len, _ = control_image_prompt_embeds.shape
+        control_image_prompt_embeds = control_image_prompt_embeds.repeat(1, num_samples, 1)
+        control_image_prompt_embeds = control_image_prompt_embeds.view(control_bs_embed * num_samples, control_seq_len, -1)
+        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.repeat(1, num_samples, 1)
+        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.view(bs_embed * num_samples, control_seq_len, -1)
+
 
         with torch.no_grad():
             prompt_embeds_, negative_prompt_embeds_ = self.get_text_embeds(
                 prompt,
                 negative_prompt=negative_prompt,
             )
-            self.cond_embeddings = torch.cat([prompt_embeds_, image_prompt_embeds], dim=1)
-            self.uncond_embeddings = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds], dim=1)
+            self.cond_embeddings = torch.cat([prompt_embeds_, image_prompt_embeds + control_image_prompt_embeds], dim=1)
+            self.uncond_embeddings = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds + control_uncond_image_prompt_embeds], dim=1)
 
         latents_denoised, indices, controls_1, controls_2 = self.reverse_diffusion(latents_inverted, control_batch_1, control_batch_2, self.guidance_scale, indices=indices)
     

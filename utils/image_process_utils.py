@@ -47,15 +47,23 @@ def cv_to_pil(np_img):
 
 
 def create_grid_from_numpy(np_img, grid_size=[2,2]):
-    
-    _, h,w = list(np_img.shape)
+    if len(np_img.shape) == 3:
+       _, h,w  = list(np_img.shape)
+    if len(np_img.shape) == 4:
+       _, h,w, channels = list(np_img.shape)
     w_grid = w * grid_size[1]
     h_grid = h * grid_size[0]
-    grid = np.zeros((h_grid, w_grid))
+    if len(np_img.shape) == 3:
+        grid = np.zeros((h_grid, w_grid))
+    if len(np_img.shape) == 4:
+        grid = np.zeros((h_grid, w_grid, channels))
     img_idx = 0
     
     for i in range(grid_size[0]):
         for j in range(grid_size[1]):
-            grid[i*h:(i+1)*h, j*w:(j+1)*w] = np_img[img_idx]
+            if len(np_img.shape) == 4:
+                grid[i*h:(i+1)*h, j*w:(j+1)*w, :] = np_img[img_idx]
+            if len(np_img.shape) == 3:
+                grid[i*h:(i+1)*h, j*w:(j+1)*w] = np_img[img_idx]
             img_idx += 1
     return grid
