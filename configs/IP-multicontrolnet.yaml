@@ -4,14 +4,14 @@
 
 video_name: "asian_girl_dance"  # specify the name of the video existing in the data/mp4_videos folder (e.g. data/mp4_videos/truck.mp4)
 image_prompt: "yellow-T-shirt"
-preprocess_name: 'openpose'  # specify the name of the condition used for the video (e.g. depth_zoe condition)
+preprocess_name: 'depth_zoe-openpose'  # specify the name of the condition used for the video (e.g. depth_zoe condition)
 
 batch_size: 3  # denotes the batch size of grids (e.g. 4 grids run in parallel)
 batch_size_vae: 1  # denotes the batch size for the VAE (e.g. 1 grid runs in parallel for the VAE)
 
 cond_step_start: 0.0  # denotes the step to start conditioning
 
-controlnet_conditioning_scale: '0.6'  # denotes the scale of the conditioning
+controlnet_conditioning_scale: '0.6-0.4'  # denotes the scale of the conditioning
 controlnet_guidance_end: 1.0  # denotes the end of the controlnet guidance
 controlnet_guidance_start: 0.0  # denotes the start of the controlnet guidance
 

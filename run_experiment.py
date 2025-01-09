@@ -8,7 +8,7 @@ import datetime
 import gc
 sys.path.append(os.getcwd())
 
-from pipelines.sd_controlnet_rave import RAVE
+from pipelines.ipa_sd_controlnet_rave import IPA_RAVE
 from pipelines.ipa_sd_multicontrolnet_rave import IPA_RAVE_MultiControlNet
 
 import utils.constants as const
@@ -69,7 +69,7 @@ def run(input_ns):
     input_ns.sample_size = len(input_ns.image_pil_list)
     print(f'Frame count: {len(input_ns.image_pil_list)}')
 
-    controlnet_class = IPA_RAVE_MultiControlNet if '-' in str(input_ns.controlnet_conditioning_scale) else RAVE
+    controlnet_class = IPA_RAVE_MultiControlNet if '-' in str(input_ns.controlnet_conditioning_scale) else IPA_RAVE
     CN = controlnet_class(device, image_encoder_path, ip_ckpt)
     CN.init_models(input_ns.hf_cn_path, input_ns.hf_path, input_ns.preprocess_name, input_ns.model_id)
     

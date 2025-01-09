@@ -183,7 +183,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             if isinstance(attn_processor, IPAttnProcessor):
                 attn_processor.scale = scale
 
-
+    @torch.no_grad()
     def get_text_embeds(self, prompt, negative_prompt):
         cond_input = self.tokenizer(prompt, padding='max_length', max_length=self.tokenizer.model_max_length, truncation=True, return_tensors='pt')
         cond_embeddings = self.text_encoder(cond_input.input_ids.to(self.device))[0]
@@ -235,15 +235,12 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
         # compute the percentage of total steps we are at
         noise_pred = self.pred_controlnet_sampling(current_sampling_percent, latent_model_input, t, prompt_embeddings, [control_image_1, control_image_2])
-
         # perform guidance
         noise_pred_uncond, noise_pred_prompt = noise_pred.chunk(2)
         noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_prompt - noise_pred_uncond)
-
         # compute the previous noisy sample x_t -> x_t-1
         latents = self.scheduler.step(noise_pred, t, latents)['prev_sample']
         return latents
-
 
     @torch.no_grad()
     def image_prompt_process(self, image_prompt_pil):
@@ -521,8 +518,6 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         self.give_control_inversion = input_dict['give_control_inversion']
 
         self.guidance_scale = input_dict['guidance_scale']
-        
-
         
         indices = list(np.arange(self.total_frame_number))
         
