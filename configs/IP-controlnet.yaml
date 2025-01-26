@@ -11,7 +11,7 @@ batch_size_vae: 1  # denotes the batch size for the VAE (e.g. 1 grid runs in par
 
 cond_step_start: 0.0  # denotes the step to start conditioning
 
-controlnet_conditioning_scale: '0.6'  # denotes the scale of the conditioning
+controlnet_conditioning_scale: 1.0  # denotes the scale of the conditioning
 controlnet_guidance_end: 1.0  # denotes the end of the controlnet guidance
 controlnet_guidance_start: 0.0  # denotes the start of the controlnet guidance
 
@@ -26,8 +26,8 @@ inversion_prompt: ''  # denotes the inversion prompt
 is_ddim_inversion: true  # denotes whether to use ddim for inversion
 is_shuffle: true  # denotes whether to applying shuffling between the grids
 
-num_inference_steps: 25  # denotes the number of inference steps during the sampling process
-num_inversion_step: 25  # denotes the number of inversion steps during the inversion process
+num_inference_steps: 50  # denotes the number of inference steps during the sampling process
+num_inversion_step: 50  # denotes the number of inversion steps during the inversion process
 save_folder: 'IPA_CN'  # denotes the name of the folder to save the results under results
 
 seed: 0  # denotes the seed

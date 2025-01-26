@@ -147,8 +147,7 @@ class IPA_RAVE(nn.Module):
                     num_tokens=self.num_tokens,
                 ).to(self.device, dtype=torch.float)
         self.unet.set_attn_processor(attn_procs)
-        for controlnet in self.controlnet.nets:
-            controlnet.set_attn_processor(CNAttnProcessor(num_tokens=self.num_tokens))
+        self.controlnet.set_attn_processor(CNAttnProcessor(num_tokens=self.num_tokens))
 
     def load_ip_adapter(self):
         if os.path.splitext(self.ip_ckpt)[-1] == ".safetensors":
@@ -206,7 +205,7 @@ class IPA_RAVE(nn.Module):
         return control_image
     
     @torch.no_grad()
-    def pred_controlnet_sampling(self, current_sampling_percent, latent_model_input, t, text_embeddings, control_image):
+    def pred_controlnet_sampling(self, current_sampling_percent, latent_model_input, t, prompt_embeddings, control_image):
         if (current_sampling_percent < self.controlnet_guidance_start or current_sampling_percent > self.controlnet_guidance_end):
             down_block_res_samples = None
             mid_block_res_sample = None
@@ -215,25 +214,25 @@ class IPA_RAVE(nn.Module):
                 latent_model_input,
                 t,
                 conditioning_scale=self.controlnet_conditioning_scale,
-                encoder_hidden_states=text_embeddings,
+                encoder_hidden_states=prompt_embeddings,
                 controlnet_cond=control_image,
                 return_dict=False,
             )
-        noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings,                    
+        noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=prompt_embeddings,                    
                             down_block_additional_residuals=down_block_res_samples,
                             mid_block_additional_residual=mid_block_res_sample)['sample']
         return noise_pred
     
     
     @torch.no_grad()
-    def denoising_step(self, latents, control_image, text_embeddings, t, guidance_scale, current_sampling_percent):
+    def denoising_step(self, latents, control_image, prompt_embeddings, t, guidance_scale, current_sampling_percent):
         
         latent_model_input = torch.cat([latents] * 2)
         control_image = torch.cat([control_image] * 2)
         latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
 
-        noise_pred = self.pred_controlnet_sampling(current_sampling_percent, latent_model_input, t, text_embeddings, control_image)
+        noise_pred = self.pred_controlnet_sampling(current_sampling_percent, latent_model_input, t, prompt_embeddings, control_image)
 
         noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
         noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
@@ -245,7 +244,7 @@ class IPA_RAVE(nn.Module):
     @torch.no_grad()
     def image_prompt_process(self, image_prompt_pil):
         depth_map = pu.pixel_perfect_process(np.array(image_prompt_pil, dtype='uint8'), self.preprocess_name)
-        depth_img = PIL.Image.fromarray(depth_map).convert("L")
+        depth_img = PIL.Image.fromarray(depth_map.astype(np.uint8))
         return(depth_img)
     
     @torch.no_grad()
@@ -333,11 +332,11 @@ class IPA_RAVE(nn.Module):
 
 
     @torch.no_grad()
-    def controlnet_pred(self, latent_model_input, t, text_embed_input, controlnet_cond):
+    def controlnet_pred(self, latent_model_input, t, prompt_embed_input, controlnet_cond):
         down_block_res_samples, mid_block_res_sample = self.controlnet(
             latent_model_input,
             t,
-            encoder_hidden_states=text_embed_input,
+            encoder_hidden_states=prompt_embed_input,
             controlnet_cond=controlnet_cond,
             conditioning_scale=1,
             return_dict=False,
@@ -345,7 +344,7 @@ class IPA_RAVE(nn.Module):
         noise_pred = self.unet(
             latent_model_input,
             t,
-            encoder_hidden_states=text_embed_input,
+            encoder_hidden_states=prompt_embed_input,
             cross_attention_kwargs={},
             down_block_additional_residuals=down_block_res_samples,
             mid_block_additional_residual=mid_block_res_sample,
@@ -398,7 +397,7 @@ class IPA_RAVE(nn.Module):
         sigma = (1 - alpha_prod_t) ** 0.5
         sigma_prev = (1 - alpha_prod_t_prev) ** 0.5
         if self.give_control_inversion:
-            eps = self.controlnet_pred(latent_frames, t, text_embed_input=cond_batch, controlnet_cond=control_batch)
+            eps = self.controlnet_pred(latent_frames, t, prompt_embed_input=cond_batch, controlnet_cond=control_batch)
         else:
             eps = self.unet(latent_frames, t, encoder_hidden_states=cond_batch, return_dict=False)[0]
         pred_x0 = (latent_frames - sigma_prev * eps) / mu_prev
@@ -550,15 +549,15 @@ class IPA_RAVE(nn.Module):
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
         
-        control_image_prompt_embeds, control_uncond_image_prompt_embeds = self.get_image_embeds(
-            pil_image=control_pil_image, clip_image_embeds=self.clip_image_embeds
-        )
+        # control_image_prompt_embeds, control_uncond_image_prompt_embeds = self.get_image_embeds(
+        #     pil_image=control_pil_image, clip_image_embeds=self.clip_image_embeds
+        # )
         
-        control_bs_embed, control_seq_len, _ = control_image_prompt_embeds.shape
-        control_image_prompt_embeds = control_image_prompt_embeds.repeat(1, num_samples, 1)
-        control_image_prompt_embeds = control_image_prompt_embeds.view(control_bs_embed * num_samples, control_seq_len, -1)
-        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.repeat(1, num_samples, 1)
-        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.view(bs_embed * num_samples, control_seq_len, -1)
+        # control_bs_embed, control_seq_len, _ = control_image_prompt_embeds.shape
+        # control_image_prompt_embeds = control_image_prompt_embeds.repeat(1, num_samples, 1)
+        # control_image_prompt_embeds = control_image_prompt_embeds.view(control_bs_embed * num_samples, control_seq_len, -1)
+        # control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.repeat(1, num_samples, 1)
+        # control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.view(bs_embed * num_samples, control_seq_len, -1)
 
 
         with torch.no_grad():
@@ -566,8 +565,8 @@ class IPA_RAVE(nn.Module):
                 prompt,
                 negative_prompt=negative_prompt,
             )
-            self.cond_embeddings = torch.cat([prompt_embeds_, image_prompt_embeds + control_image_prompt_embeds], dim=1)
-            self.uncond_embeddings = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds + control_uncond_image_prompt_embeds], dim=1)
+            self.cond_embeddings = torch.cat([prompt_embeds_, image_prompt_embeds], dim=1)
+            self.uncond_embeddings = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds], dim=1)
 
 
         latents_denoised, indices, controls = self.reverse_diffusion(latents_inverted, control_batch, self.guidance_scale, indices=indices)
