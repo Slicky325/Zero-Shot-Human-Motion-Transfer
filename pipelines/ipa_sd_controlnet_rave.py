@@ -18,7 +18,6 @@ from safetensors import safe_open
 import torch.nn as nn
 import numpy as np
 from PIL import Image
-import torch.nn.functional as F
 
 import utils.feature_utils as fu
 import utils.preprocesser_utils as pu
@@ -150,6 +149,7 @@ class IPA_RAVE(nn.Module):
                 ).to(self.device, dtype=torch.float)
         self.unet.set_attn_processor(attn_procs)
         self.controlnet.set_attn_processor(CNAttnProcessor(num_tokens=self.num_tokens))
+
 
     def load_ip_adapter(self):
         if os.path.splitext(self.ip_ckpt)[-1] == ".safetensors":
@@ -435,19 +435,6 @@ class IPA_RAVE(nn.Module):
         frames = [k[indices.index(i)] for i in np.arange(len(indices))]    
         return frames
 
-
-    @torch.autocast(dtype=torch.float16, device_type='cuda')  
-    def batched_denoise_step(self, x, t, indices):
-        batch_size = self.config["batch_size"]
-        denoised_latents = []
-        pivotal_idx = torch.randint(batch_size, (len(x)//batch_size,)) + torch.arange(0,len(x),batch_size) 
-        
-        self.denoise_step(x[pivotal_idx], t, indices[pivotal_idx])
-        for i, b in enumerate(range(0, len(x), batch_size)):
-            denoised_latents.append(self.denoise_step(x[b:b + batch_size], t, indices[b:b + batch_size]))
-        denoised_latents = torch.cat(denoised_latents)
-        return denoised_latents
-
     @torch.no_grad()
     def __preprocess_inversion_input(self, init_latents, control_batch):
         list_of_flattens = [fu.flatten_grid(el.unsqueeze(0), self.grid) for el in init_latents]
@@ -487,7 +474,6 @@ class IPA_RAVE(nn.Module):
         self.batch_size = input_dict['batch_size']
         self.inv_batch_size = self.batch_size * self.grid_size * self.grid_size
         self.batch_size_vae = input_dict['batch_size_vae']
-        self.grid_size = input_dict['grid_size']
         
         self.num_inference_steps = input_dict['num_inference_steps']
         self.num_inversion_step = input_dict['num_inversion_step']
@@ -531,7 +517,6 @@ class IPA_RAVE(nn.Module):
 
             
         control_pil_image = self.image_prompt_process(pil_img_prompt)
-
         if pil_img_prompt is not None:
             num_prompts = 1 if isinstance(pil_img_prompt, Image.Image) else len(pil_img_prompt)
         else:

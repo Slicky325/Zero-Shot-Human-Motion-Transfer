@@ -12,6 +12,7 @@ from tqdm import tqdm
 from transformers import logging
 from diffusers import ControlNetModel, StableDiffusionControlNetImg2ImgPipeline, DDIMScheduler
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
+from torchvision import transforms
 from safetensors import safe_open
 
 import torch.nn as nn
@@ -521,7 +522,15 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         
         indices = list(np.arange(self.total_frame_number))
         
-        
+        img_prompt = Image.open(self.image_path)
+        pil_img_prompt = img_prompt.resize((256, 256)) 
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.5], [0.5])
+        ])
+        img_prompt_tensor = transform(pil_img_prompt).unsqueeze(0)  # Add batch dimension
+        img_prompt_tensor = img_prompt_tensor.to(self.device)   
+                
         img_batch, control_batch_1, control_batch_2 = self.process_image_batch(input_dict['image_pil_list'])
         init_latents_pre = self.encode_imgs(img_batch)
         
@@ -536,13 +545,10 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             init_latents_pre = torch.cat([init_latents_pre], dim=0) 
             noise = torch.randn_like(init_latents_pre)
             latents_inverted = self.scheduler.add_noise(init_latents_pre, noise, self.scheduler.timesteps[:1])
-            
-        image = Image.open(self.image_path)
-        pil_image = image.resize((256, 256))    
-        control_pil_image = self.image_prompt_process(pil_image)
 
-        if pil_image is not None:
-            num_prompts = 1 if isinstance(pil_image, Image.Image) else len(pil_image)
+        control_pil_image = self.image_prompt_process(pil_img_prompt)
+        if pil_img_prompt is not None:
+            num_prompts = 1 if isinstance(pil_img_prompt, Image.Image) else len(pil_img_prompt)
         else:
             num_prompts = self.clip_image_embeds.size(0)
 
@@ -559,7 +565,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             negative_prompt = [negative_prompt] * num_prompts
 
         image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
-            pil_image=pil_image, clip_image_embeds=self.clip_image_embeds
+            pil_image=pil_img_prompt, clip_image_embeds=self.clip_image_embeds
         )
         num_samples = 1
         bs_embed, seq_len, _ = image_prompt_embeds.shape
