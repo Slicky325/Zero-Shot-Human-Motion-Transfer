@@ -12,11 +12,13 @@ from tqdm import tqdm
 from transformers import logging
 from diffusers import ControlNetModel, StableDiffusionControlNetImg2ImgPipeline, DDIMScheduler
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
+from torchvision import transforms
 from safetensors import safe_open
 
 import torch.nn as nn
 import numpy as np
 from PIL import Image
+import torch.nn.functional as F
 
 import utils.feature_utils as fu
 import utils.preprocesser_utils as pu
@@ -81,7 +83,7 @@ class IPA_RAVE(nn.Module):
     def __init_pipe(self, hf_cn_path, hf_path):
         controlnet = ControlNetModel.from_pretrained(hf_cn_path, torch_dtype=self.dtype).to(self.device, self.dtype)
 
-        pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(hf_path, controlnet=controlnet, torch_dtype=self.dtype).to(self.device, self.dtype) 
+        pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(hf_path, controlnet=controlnet, torch_dtype=self.dtype, local_files_only=True).to(self.device, self.dtype) 
         pipe.enable_model_cpu_offload()
         pipe.enable_xformers_memory_efficient_attention()
         return pipe
@@ -485,7 +487,8 @@ class IPA_RAVE(nn.Module):
         self.batch_size = input_dict['batch_size']
         self.inv_batch_size = self.batch_size * self.grid_size * self.grid_size
         self.batch_size_vae = input_dict['batch_size_vae']
-
+        self.grid_size = input_dict['grid_size']
+        
         self.num_inference_steps = input_dict['num_inference_steps']
         self.num_inversion_step = input_dict['num_inversion_step']
         self.inverse_path = input_dict['inverse_path']
@@ -502,6 +505,14 @@ class IPA_RAVE(nn.Module):
         
         indices = list(np.arange(self.total_frame_number))
         
+        img_prompt = Image.open(self.image_path)
+        pil_img_prompt = img_prompt.resize((256, 256))
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.5], [0.5])
+        ])
+        img_prompt_tensor = transform(pil_img_prompt).unsqueeze(0)  # Add batch dimension
+        img_prompt_tensor = img_prompt_tensor.to(self.device) 
         
         img_batch, control_batch = self.process_image_batch(input_dict['image_pil_list'])
         init_latents_pre = self.encode_imgs(img_batch)
@@ -518,12 +529,11 @@ class IPA_RAVE(nn.Module):
             noise = torch.randn_like(init_latents_pre)
             latents_inverted = self.scheduler.add_noise(init_latents_pre, noise, self.scheduler.timesteps[:1])
 
-        image = Image.open(self.image_path)
-        pil_image = image.resize((256, 256))    
-        control_pil_image = self.image_prompt_process(pil_image)
+            
+        control_pil_image = self.image_prompt_process(pil_img_prompt)
 
-        if pil_image is not None:
-            num_prompts = 1 if isinstance(pil_image, Image.Image) else len(pil_image)
+        if pil_img_prompt is not None:
+            num_prompts = 1 if isinstance(pil_img_prompt, Image.Image) else len(pil_img_prompt)
         else:
             num_prompts = self.clip_image_embeds.size(0)
 
@@ -540,7 +550,7 @@ class IPA_RAVE(nn.Module):
             negative_prompt = [negative_prompt] * num_prompts
 
         image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
-            pil_image=pil_image, clip_image_embeds=self.clip_image_embeds
+            pil_image=pil_img_prompt, clip_image_embeds=self.clip_image_embeds
         )
         num_samples = 1
         bs_embed, seq_len, _ = image_prompt_embeds.shape
@@ -549,15 +559,15 @@ class IPA_RAVE(nn.Module):
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
         
-        # control_image_prompt_embeds, control_uncond_image_prompt_embeds = self.get_image_embeds(
-        #     pil_image=control_pil_image, clip_image_embeds=self.clip_image_embeds
-        # )
+        control_image_prompt_embeds, control_uncond_image_prompt_embeds = self.get_image_embeds(
+            pil_image=control_pil_image, clip_image_embeds=self.clip_image_embeds
+        )
         
-        # control_bs_embed, control_seq_len, _ = control_image_prompt_embeds.shape
-        # control_image_prompt_embeds = control_image_prompt_embeds.repeat(1, num_samples, 1)
-        # control_image_prompt_embeds = control_image_prompt_embeds.view(control_bs_embed * num_samples, control_seq_len, -1)
-        # control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.repeat(1, num_samples, 1)
-        # control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.view(bs_embed * num_samples, control_seq_len, -1)
+        control_bs_embed, control_seq_len, _ = control_image_prompt_embeds.shape
+        control_image_prompt_embeds = control_image_prompt_embeds.repeat(1, num_samples, 1)
+        control_image_prompt_embeds = control_image_prompt_embeds.view(control_bs_embed * num_samples, control_seq_len, -1)
+        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.repeat(1, num_samples, 1)
+        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.view(bs_embed * num_samples, control_seq_len, -1)
 
 
         with torch.no_grad():

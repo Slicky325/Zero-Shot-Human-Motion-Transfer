@@ -35,14 +35,14 @@ def init_paths(input_ns):
     save_idx = max([int(x[-5:]) for x in os.listdir(save_dir)])+1 if os.listdir(save_dir) != [] else 0
     input_ns.save_path = f'{save_dir}/{input_ns.image_prompt}-{str(save_idx).zfill(5)}'
     
-    input_ns.video_path = f'{const.PAIR_PATH}/{input_ns.video_name}.mp4'
-    input_ns.image_path = f'{const.PAIR_PATH}/{input_ns.image_prompt}.png'
+    input_ns.video_path = f'{const.VIDEO_PATH}/{input_ns.video_name}.mp4'
+    input_ns.image_path = f'{const.PHOTO_PATH}/{input_ns.image_prompt}.png'
     
     if '-' in input_ns.preprocess_name:
         input_ns.hf_cn_path = [const.PREPROCESSOR_DICT[i] for i in input_ns.preprocess_name.split('-')]
     else:
         input_ns.hf_cn_path = const.PREPROCESSOR_DICT[input_ns.preprocess_name]
-    input_ns.hf_path = "./pretrained_models/stable-diffusion-v1-4"
+    input_ns.hf_path = "runwayml/stable-diffusion-v1-5"
     
     input_ns.inverse_path = f'{const.GENERATED_DATA_PATH}/inverses/{input_ns.video_name}/{input_ns.preprocess_name}_{input_ns.model_id}_{input_ns.grid_size}x{input_ns.grid_size}_{input_ns.pad}'
     input_ns.control_path = f'{const.GENERATED_DATA_PATH}/controls/{input_ns.video_name}/{input_ns.preprocess_name}_{input_ns.grid_size}x{input_ns.grid_size}_{input_ns.pad}'
@@ -57,8 +57,8 @@ def run(input_ns):
     if 'model_id' not in list(input_ns.__dict__.keys()):
         input_ns.model_id = "None"
     device = init_device()
-    image_encoder_path = "pretrained_models/IP_models/image_encoder/"
-    ip_ckpt = "pretrained_models/IP_models/ip-adapter_sd15.bin"
+    image_encoder_path = "pretrained_models/IP_models/models/image_encoder/"
+    ip_ckpt = "pretrained_models/IP_models/models/ip-adapter_sd15.bin"
     input_ns = init_paths(input_ns)
     input_ns.clip_embeds = None 
     
@@ -84,7 +84,7 @@ def run(input_ns):
     end_time = datetime.datetime.now()
     save_name = f"{'-'.join(input_ns.image_prompt)}_cstart-{input_ns.controlnet_guidance_start}_gs-{input_ns.guidance_scale}_pre-{'-'.join((input_ns.preprocess_name.replace('-','+').split('_')))}_cscale-{input_ns.controlnet_conditioning_scale}_grid-{input_ns.grid_size}_pad-{input_ns.pad}_model-{input_ns.model_id.split('/')[-1]}"
     res_vid[0].save(f"{input_ns.save_path}/{save_name}.gif", save_all=True, append_images=res_vid[1:], optimize=False, loop=10000)
-    # control_vid[0].save(f"{input_ns.save_path}/control_{save_name}.gif", save_all=True, append_images=control_vid[1:], optimize=False, loop=10000)
+    control_vid[0].save(f"{input_ns.save_path}/control_{save_name}.gif", save_all=True, append_images=control_vid[1:], optimize=False, loop=10000)
 
     yaml_dict['total_time'] = (end_time - start_time).total_seconds()
     yaml_dict['total_number_of_frames'] = len(res_vid)

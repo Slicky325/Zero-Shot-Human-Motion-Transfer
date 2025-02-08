@@ -418,10 +418,26 @@ class CNAttnProcessor:
     Default processor for performing attention-related computations.
     """
 
-    def __init__(self, num_tokens=4):
-        self.num_tokens = num_tokens
+    
 
-    def __call__(self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None, *args, **kwargs,):
+## for controlnet
+class CNAttnProcessor:
+    def __init__(self, num_tokens=4, device="cuda"):
+        self.num_tokens = num_tokens
+        self.device = device
+        if not torch.cuda.is_available() and device == "cuda":
+            raise RuntimeError("CUDA is not available. Please check your GPU setup.")
+
+    def __call__(self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None, *args, **kwargs):
+        # Ensure inputs are on GPU
+        hidden_states = hidden_states.to(self.device)
+        if encoder_hidden_states is not None:
+            encoder_hidden_states = encoder_hidden_states.to(self.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
+        if temb is not None:
+            temb = temb.to(self.device)
+
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -454,9 +470,10 @@ class CNAttnProcessor:
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
 
-        query = attn.head_to_batch_dim(query)
-        key = attn.head_to_batch_dim(key)
-        value = attn.head_to_batch_dim(value)
+        # Ensure intermediate tensors are on GPU
+        query = attn.head_to_batch_dim(query).to(self.device)
+        key = attn.head_to_batch_dim(key).to(self.device)
+        value = attn.head_to_batch_dim(value).to(self.device)
 
         attention_probs = attn.get_attention_scores(query, key, attention_mask)
         hidden_states = torch.bmm(attention_probs, value)
@@ -475,29 +492,28 @@ class CNAttnProcessor:
 
         hidden_states = hidden_states / attn.rescale_output_factor
 
-        return hidden_states
+        return hidden_states.to(self.device)  # Ensure output is on GPU
 
 
 class CNAttnProcessor2_0:
-    r"""
-    Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
-    """
-
-    def __init__(self, num_tokens=4):
+    def __init__(self, num_tokens=4, device="cuda"):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
+        if not torch.cuda.is_available() and device == "cuda":
+            raise RuntimeError("CUDA is not available. Please check your GPU setup.")
         self.num_tokens = num_tokens
+        self.device = device
 
-    def __call__(
-        self,
-        attn,
-        hidden_states,
-        encoder_hidden_states=None,
-        attention_mask=None,
-        temb=None,
-        *args,
-        **kwargs,
-    ):
+    def __call__(self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None, *args, **kwargs):
+        # Ensure inputs are on GPU
+        hidden_states = hidden_states.to(self.device)
+        if encoder_hidden_states is not None:
+            encoder_hidden_states = encoder_hidden_states.to(self.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
+        if temb is not None:
+            temb = temb.to(self.device)
+
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -515,8 +531,6 @@ class CNAttnProcessor2_0:
 
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
-            # scaled_dot_product_attention expects attention_mask shape to be
-            # (batch, heads, source_length, target_length)
             attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
 
         if attn.group_norm is not None:
@@ -538,13 +552,11 @@ class CNAttnProcessor2_0:
         inner_dim = key.shape[-1]
         head_dim = inner_dim // attn.heads
 
-        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        # Ensure intermediate tensors are on GPU
+        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2).to(self.device)
+        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2).to(self.device)
+        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2).to(self.device)
 
-        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-
-        # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
         hidden_states = F.scaled_dot_product_attention(
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
@@ -565,4 +577,4 @@ class CNAttnProcessor2_0:
 
         hidden_states = hidden_states / attn.rescale_output_factor
 
-        return hidden_states
+        return hidden_states.to(self.device)  # Ensure output is on GPU

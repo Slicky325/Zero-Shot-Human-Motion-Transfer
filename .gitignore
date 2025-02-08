@@ -1,6 +1,8 @@
-data/TikTok dataset
+data/
 */__pycache__
 */*/__pycache__
 pretrained_models/
 generated/
 results/
+result_simple/
+tmp_configs

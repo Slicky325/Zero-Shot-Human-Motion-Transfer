@@ -2,8 +2,8 @@
 # to use 2 controls for controlnet, separate the names of the preprocesses and their scales with '-'. e.g. preprocess_name: 'depth_zoe-lineart_realistic' control
 # controlnet_conditioning_scale: '0.75-0.25'
 
-video_name: "asian_girl_dance"  # specify the name of the video existing in the data/mp4_videos folder (e.g. data/mp4_videos/truck.mp4)
-image_prompt: "yellow-T-shirt"
+video_name: ""  # specify the name of the video existing in the data/mp4_videos folder (e.g. data/mp4_videos/truck.mp4)
+image_prompt: ""
 preprocess_name: 'depth_zoe-openpose'  # specify the name of the condition used for the video (e.g. depth_zoe condition)
 
 batch_size: 3  # denotes the batch size of grids (e.g. 4 grids run in parallel)

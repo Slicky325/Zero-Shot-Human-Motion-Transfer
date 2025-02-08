@@ -81,7 +81,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
     def __init_pipe(self, hf_cn_path, hf_path):
         controlnet_1 = ControlNetModel.from_pretrained(hf_cn_path[0], torch_dtype=self.dtype).to(self.device, self.dtype)
         controlnet_2 = ControlNetModel.from_pretrained(hf_cn_path[1], torch_dtype=self.dtype).to(self.device, self.dtype)
-        pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(hf_path, controlnet=[controlnet_1, controlnet_2], torch_dtype=self.dtype).to(self.device, self.dtype) 
+        pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(hf_path, controlnet=[controlnet_1, controlnet_2], torch_dtype=self.dtype, local_files_only=True).to(self.device, self.dtype) 
         pipe.enable_model_cpu_offload()
         pipe.enable_xformers_memory_efficient_attention()
         return pipe
