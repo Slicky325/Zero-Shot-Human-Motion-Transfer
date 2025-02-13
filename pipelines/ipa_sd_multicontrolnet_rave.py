@@ -14,16 +14,18 @@ from diffusers import ControlNetModel, StableDiffusionControlNetImg2ImgPipeline,
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 from torchvision import transforms
 from safetensors import safe_open
+from torch.cuda.amp import autocast
 
 import torch.nn as nn
 import numpy as np
 from PIL import Image
+from collections import OrderedDict
 
 import utils.feature_utils as fu
 import utils.preprocesser_utils as pu
 import utils.image_process_utils as ipu
 
-from .utils import is_torch2_available
+from .utils import is_torch2_available, Embedding_Adapter, ImageProjModel
 
 if is_torch2_available():
     from .attention_processor import (
@@ -47,35 +49,12 @@ def set_seed_lib(seed):
     random.seed(seed)
     set_seed(seed)
 
-class ImageProjModel(torch.nn.Module):
-    """Projection Model"""
-
-    def __init__(self, cross_attention_dim=1024, clip_embeddings_dim=1024, clip_extra_context_tokens=4):
-        super().__init__()
-
-        self.generator = None
-        self.cross_attention_dim = cross_attention_dim
-        self.clip_extra_context_tokens = clip_extra_context_tokens
-        self.proj = torch.nn.Linear(clip_embeddings_dim, self.clip_extra_context_tokens * cross_attention_dim)
-        self.norm = torch.nn.LayerNorm(cross_attention_dim)
-
-    def forward(self, image_embeds):
-        embeds = image_embeds
-        clip_extra_context_tokens = self.proj(embeds).reshape(
-            -1, self.clip_extra_context_tokens, self.cross_attention_dim
-        )
-        clip_extra_context_tokens = self.norm(clip_extra_context_tokens)
-        return clip_extra_context_tokens
-
 @torch.no_grad()
 class IPA_RAVE_MultiControlNet(nn.Module):
-    def __init__(self, device, image_encoder_path, ip_ckpt, num_tokens=4):
+    def __init__(self, device, num_tokens=4):
         super().__init__()
-
         self.device = device
         self.dtype = torch.float
-        self.image_encoder_path = image_encoder_path
-        self.ip_ckpt = ip_ckpt
         self.num_tokens = num_tokens
 
     @torch.no_grad()
@@ -88,7 +67,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         return pipe
         
     @torch.no_grad()
-    def init_models(self, hf_cn_path, hf_path, preprocess_name, model_id=None):
+    def init_models(self, hf_cn_path, hf_path, preprocess_name, image_encoder_path, ip_ckpt, model_id=None):
         if model_id is None or model_id == "None":
             pipe = self.__init_pipe(hf_cn_path, hf_path)  
         else:
@@ -107,14 +86,25 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         
         self.tokenizer = pipe.tokenizer
         self.text_encoder = pipe.text_encoder
+        
+        # self.adapter = None
+        # adapter_chkpt = 'pretrained_models/adapter_499.pth'
+        # adapter_state_dict = torch.load(adapter_chkpt)
+        # new_state_dict = OrderedDict()
+        # for k, v in adapter_state_dict.items():
+        #     name = k.replace('module.', '')  #name = k[7:] if k[:7] == 'module' else k 
+        #     new_state_dict[name] = v
+        # pipe.adapter = Embedding_Adapter()
+        # pipe.adapter.load_state_dict(new_state_dict)
+        # self.adapter = pipe.adapter.cuda()
 
         
-        self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(self.image_encoder_path).to(
+        self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(image_encoder_path).to(
             self.device, dtype=torch.float
         )
         self.clip_image_processor = CLIPImageProcessor()
         self.image_proj_model = self.init_proj()
-        self.load_ip_adapter()
+        self.load_ip_adapter(ip_ckpt)
 
         del pipe
                 
@@ -151,33 +141,47 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         for controlnet in self.controlnet.nets:
             controlnet.set_attn_processor(CNAttnProcessor(num_tokens=self.num_tokens))
 
-    def load_ip_adapter(self):
-        if os.path.splitext(self.ip_ckpt)[-1] == ".safetensors":
+    def load_ip_adapter(self, ip_ckpt):
+        if os.path.splitext(ip_ckpt)[-1] == ".safetensors":
             state_dict = {"image_proj": {}, "ip_adapter": {}}
-            with safe_open(self.ip_ckpt, framework="pt", device=self.device) as f:
+            with safe_open(ip_ckpt, framework="pt", device=self.device) as f:
                 for key in f.keys():
                     if key.startswith("image_proj."):
                         state_dict["image_proj"][key.replace("image_proj.", "")] = f.get_tensor(key)
                     elif key.startswith("ip_adapter."):
                         state_dict["ip_adapter"][key.replace("ip_adapter.", "")] = f.get_tensor(key)
         else:
-            state_dict = torch.load(self.ip_ckpt, map_location=self.device)
+            state_dict = torch.load(ip_ckpt, map_location=self.device)
         self.image_proj_model.load_state_dict(state_dict["image_proj"])
         ip_layers = torch.nn.ModuleList(self.unet.attn_processors.values())
         ip_layers.load_state_dict(state_dict["ip_adapter"])
 
     @torch.no_grad()
-    def get_image_embeds(self, pil_image=None, clip_image_embeds=None):
-        if pil_image is not None:
-            if isinstance(pil_image, Image.Image):
-                pil_image = [pil_image]
-            clip_image = self.clip_image_processor(images=pil_image, return_tensors="pt").pixel_values
-            clip_image_embeds = self.image_encoder(clip_image.to(self.device, dtype=torch.float)).image_embeds
-        else:
-            clip_image_embeds = clip_image_embeds.to(self.device, dtype=torch.float)
-        image_prompt_embeds = self.image_proj_model(clip_image_embeds)
-        uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
-        return image_prompt_embeds, uncond_image_prompt_embeds
+    def get_image_encoded(self, image, num_images_per_prompt=1):
+        image = [image]
+        uncond_image = [torch.zeros((image[0].size[0], image[0].size[1], 3))]
+
+        with autocast():
+            # clip encoder
+            inputs = self.clip_image_processor(images=image, return_tensors="pt").pixel_values
+            image_embeddings = self.image_encoder(inputs.to(self.device, dtype=torch.float)).image_embeds
+
+            uncond_inputs = self.clip_image_processor(images=uncond_image, return_tensors="pt").pixel_values
+            uncond_image_embeddings = self.image_encoder(uncond_inputs.to(self.device, dtype=torch.float)).image_embeds
+            
+            image_embeddings = self.image_proj_model(image_embeddings)
+            uncond_image_embeddings = self.image_proj_model(uncond_image_embeddings)
+
+        # duplicate text embeddings for each generation per prompt, using mps friendly method
+        bs_embed, seq_len, _ = image_embeddings.shape
+        image_embeddings  = image_embeddings.repeat(1, num_images_per_prompt, 1)
+        image_embeddings = image_embeddings.view(bs_embed * num_images_per_prompt, seq_len, -1)
+
+        bs_embed, seq_len, _ = uncond_image_embeddings.shape
+        uncond_image_embeddings  = uncond_image_embeddings.repeat(1, num_images_per_prompt, 1)
+        uncond_image_embeddings = uncond_image_embeddings.view(bs_embed * num_images_per_prompt, seq_len, -1)
+
+        return image_embeddings, uncond_image_embeddings
 
     def set_scale(self, scale):
         for attn_processor in self.unet.attn_processors.values():
@@ -546,52 +550,16 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             noise = torch.randn_like(init_latents_pre)
             latents_inverted = self.scheduler.add_noise(init_latents_pre, noise, self.scheduler.timesteps[:1])
 
-        control_pil_image = self.image_prompt_process(pil_img_prompt)
-        if pil_img_prompt is not None:
-            num_prompts = 1 if isinstance(pil_img_prompt, Image.Image) else len(pil_img_prompt)
-        else:
-            num_prompts = self.clip_image_embeds.size(0)
-
-        prompt = None
-        negative_prompt = None
-        if prompt is None:
-            prompt = "best quality, high quality"
-        if negative_prompt is None:
-            negative_prompt = "monochrome, lowres, bad anatomy, worst quality, low quality"
-
-        if not isinstance(prompt, List):
-            prompt = [prompt] * num_prompts
-        if not isinstance(negative_prompt, List):
-            negative_prompt = [negative_prompt] * num_prompts
-
-        image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
-            pil_image=pil_img_prompt, clip_image_embeds=self.clip_image_embeds
-        )
-        num_samples = 1
-        bs_embed, seq_len, _ = image_prompt_embeds.shape
-        image_prompt_embeds = image_prompt_embeds.repeat(1, num_samples, 1)
-        image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
-        uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
-        uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
-        
-        control_image_prompt_embeds, control_uncond_image_prompt_embeds = self.get_image_embeds(
-            pil_image=control_pil_image, clip_image_embeds=self.clip_image_embeds
-        )
-        
-        control_bs_embed, control_seq_len, _ = control_image_prompt_embeds.shape
-        control_image_prompt_embeds = control_image_prompt_embeds.repeat(1, num_samples, 1)
-        control_image_prompt_embeds = control_image_prompt_embeds.view(control_bs_embed * num_samples, control_seq_len, -1)
-        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.repeat(1, num_samples, 1)
-        control_uncond_image_prompt_embeds = control_uncond_image_prompt_embeds.view(bs_embed * num_samples, control_seq_len, -1)
-
-
+        prompt = "best quality, high quality, clear"
+        negative_prompt = "monochrome, lowres, bad anatomy, worst quality, low quality"    
+        image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_encoded(pil_img_prompt) 
         with torch.no_grad():
             prompt_embeds_, negative_prompt_embeds_ = self.get_text_embeds(
                 prompt,
                 negative_prompt=negative_prompt,
             )
-            self.cond_embeddings = torch.cat([prompt_embeds_, image_prompt_embeds + control_image_prompt_embeds], dim=1)
-            self.uncond_embeddings = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds + control_uncond_image_prompt_embeds], dim=1)
+            self.cond_embeddings = torch.cat([prompt_embeds_, image_prompt_embeds], dim=1)
+            self.uncond_embeddings = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds], dim=1)
 
         latents_denoised, indices, controls_1, controls_2 = self.reverse_diffusion(latents_inverted, control_batch_1, control_batch_2, self.guidance_scale, indices=indices)
     

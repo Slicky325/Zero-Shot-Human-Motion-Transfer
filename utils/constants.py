@@ -5,6 +5,8 @@ from datetime import datetime
 date_time = datetime.now().strftime("%m-%d-%Y")
 
 CWD = os.getcwd()
+#VIDEO_PATH = os.path.join(CWD, 'trial_pair')
+#PHOTO_PATH = os.path.join(CWD, 'trial_pair')
 VIDEO_PATH = os.path.join(CWD, 'data', 'output_videos')
 PHOTO_PATH = os.path.join(CWD, 'data', 'first_frames')
 OUTPUT_PATH = os.path.join(CWD, 'results', date_time) 

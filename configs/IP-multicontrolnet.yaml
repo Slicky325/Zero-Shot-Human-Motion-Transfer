@@ -2,8 +2,8 @@
 # to use 2 controls for controlnet, separate the names of the preprocesses and their scales with '-'. e.g. preprocess_name: 'depth_zoe-lineart_realistic' control
 # controlnet_conditioning_scale: '0.75-0.25'
 
-video_name: ""  # specify the name of the video existing in the data/mp4_videos folder (e.g. data/mp4_videos/truck.mp4)
-image_prompt: ""
+video_name: "00009"  # specify the name of the video existing in the data/mp4_videos folder (e.g. data/mp4_videos/truck.mp4)
+image_prompt: "00001"
 preprocess_name: 'depth_zoe-openpose'  # specify the name of the condition used for the video (e.g. depth_zoe condition)
 
 batch_size: 3  # denotes the batch size of grids (e.g. 4 grids run in parallel)
@@ -23,7 +23,7 @@ pad: 1  # denotes the padding of the video (if 1, use the same video)
 guidance_scale: 7.5  # denotes the scale of the guidance
 inversion_prompt: ''  # denotes the inversion prompt
 
-is_ddim_inversion: true  # denotes whether to use ddim for inversion
+is_ddim_inversion: false  # denotes whether to use ddim for inversion
 is_shuffle: true  # denotes whether to applying shuffling between the grids
 
 num_inference_steps: 25  # denotes the number of inference steps during the sampling process

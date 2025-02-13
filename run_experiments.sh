@@ -12,7 +12,7 @@ VIDEO_DIR="data/output_videos"
 # Directory containing the frames
 FRAME_DIR="data/first_frames"
 # Base config file
-CONFIG_FILE="configs/IP-controlnet.yaml"
+CONFIG_FILE="configs/IP-multicontrolnet.yaml"
 # Directory for temporary configs
 TMP_CONFIG_DIR="tmp_configs"
 
@@ -66,3 +66,4 @@ done
 
 # Clean up temporary configs
 rm -rf $TMP_CONFIG_DIR
+rm -rf generated/

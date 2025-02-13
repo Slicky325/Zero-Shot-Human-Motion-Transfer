@@ -3,6 +3,5 @@ data/
 */*/__pycache__
 pretrained_models/
 generated/
-results/
-result_simple/
+RESULT_GROUP
 tmp_configs

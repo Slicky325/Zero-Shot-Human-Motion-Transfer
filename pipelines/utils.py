@@ -1,7 +1,9 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 import numpy as np
 from PIL import Image
+from einops import rearrange
 
 attn_maps = {}
 def hook_fn(name):
@@ -79,3 +81,56 @@ def attnmaps2images(net_attn_maps):
     return images
 def is_torch2_available():
     return hasattr(F, "scaled_dot_product_attention")
+
+class ImageProjModel(torch.nn.Module):
+    """Projection Model"""
+
+    def __init__(self, cross_attention_dim=1024, clip_embeddings_dim=1024, clip_extra_context_tokens=4):
+        super().__init__()
+
+        self.generator = None
+        self.cross_attention_dim = cross_attention_dim
+        self.clip_extra_context_tokens = clip_extra_context_tokens
+        self.proj = torch.nn.Linear(clip_embeddings_dim, self.clip_extra_context_tokens * cross_attention_dim)
+        self.norm = torch.nn.LayerNorm(cross_attention_dim)
+
+    def forward(self, image_embeds):
+        embeds = image_embeds
+        clip_extra_context_tokens = self.proj(embeds).reshape(
+            -1, self.clip_extra_context_tokens, self.cross_attention_dim
+        )
+        clip_extra_context_tokens = self.norm(clip_extra_context_tokens)
+        return clip_extra_context_tokens
+
+class Embedding_Adapter(nn.Module):
+    def __init__(self, input_nc=38, output_nc=4, norm_layer=nn.InstanceNorm2d, chkpt=None):
+        super(Embedding_Adapter, self).__init__()
+
+        self.save_method_name = "adapter"
+
+        self.pool =  nn.MaxPool2d(2)
+        self.vae2clip = nn.Linear(1280, 768)
+
+        self.linear1 = nn.Linear(54, 50) # 50 x 54 shape
+
+        # initialize weights
+        with torch.no_grad():
+            self.linear1.weight = nn.Parameter(torch.eye(50, 54))
+
+        if chkpt is not None:
+            pass
+
+    def forward(self, clip, vae):
+        vae = self.pool(vae) # 1 4 80 64 --> 1 4 40 32
+        vae = rearrange(vae, 'b c h w -> b c (h w)') # 1 4 20 16 --> 1 4 1280
+        vae = self.vae2clip(vae) # 1 4 768
+        # Concatenate
+        print(clip.shape)
+        print(vae.shape)
+        exit()
+        concat = torch.cat((clip, vae), 1)
+        # Encode
+        concat = rearrange(concat, 'b c d -> b d c')
+        concat = self.linear1(concat)
+        concat = rearrange(concat, 'b d c -> b c d')
+        return concat
