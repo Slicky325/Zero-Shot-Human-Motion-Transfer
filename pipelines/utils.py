@@ -127,10 +127,5 @@ class Embedding_Adapter(nn.Module):
         # Concatenate
         print(clip.shape)
         print(vae.shape)
-        exit()
         concat = torch.cat((clip, vae), 1)
-        # Encode
-        concat = rearrange(concat, 'b c d -> b d c')
-        concat = self.linear1(concat)
-        concat = rearrange(concat, 'b d c -> b c d')
         return concat

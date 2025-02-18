@@ -23,7 +23,7 @@ pad: 1  # denotes the padding of the video (if 1, use the same video)
 guidance_scale: 7.5  # denotes the scale of the guidance
 inversion_prompt: ''  # denotes the inversion prompt
 
-is_ddim_inversion: false  # denotes whether to use ddim for inversion
+is_ddim_inversion: true  # denotes whether to use ddim for inversion
 is_shuffle: true  # denotes whether to applying shuffling between the grids
 
 num_inference_steps: 25  # denotes the number of inference steps during the sampling process

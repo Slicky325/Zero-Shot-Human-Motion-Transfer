@@ -165,14 +165,12 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             # clip encoder
             inputs = self.clip_image_processor(images=image, return_tensors="pt").pixel_values
             image_embeddings = self.image_encoder(inputs.to(self.device, dtype=torch.float)).image_embeds
-
             uncond_inputs = self.clip_image_processor(images=uncond_image, return_tensors="pt").pixel_values
             uncond_image_embeddings = self.image_encoder(uncond_inputs.to(self.device, dtype=torch.float)).image_embeds
             
             image_embeddings = self.image_proj_model(image_embeddings)
             uncond_image_embeddings = self.image_proj_model(uncond_image_embeddings)
 
-        # duplicate text embeddings for each generation per prompt, using mps friendly method
         bs_embed, seq_len, _ = image_embeddings.shape
         image_embeddings  = image_embeddings.repeat(1, num_images_per_prompt, 1)
         image_embeddings = image_embeddings.view(bs_embed * num_images_per_prompt, seq_len, -1)
@@ -527,7 +525,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
         indices = list(np.arange(self.total_frame_number))
         
         img_prompt = Image.open(self.image_path)
-        pil_img_prompt = img_prompt.resize((256, 256)) 
+        pil_img_prompt = img_prompt.resize((512, 640)) 
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize([0.5], [0.5])
@@ -550,7 +548,7 @@ class IPA_RAVE_MultiControlNet(nn.Module):
             noise = torch.randn_like(init_latents_pre)
             latents_inverted = self.scheduler.add_noise(init_latents_pre, noise, self.scheduler.timesteps[:1])
 
-        prompt = "best quality, high quality, clear"
+        prompt = "best quality, high quality, realisitic, smooth human"
         negative_prompt = "monochrome, lowres, bad anatomy, worst quality, low quality"    
         image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_encoded(pil_img_prompt) 
         with torch.no_grad():

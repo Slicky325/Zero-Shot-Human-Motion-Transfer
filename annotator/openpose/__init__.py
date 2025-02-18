@@ -327,7 +327,7 @@ class OpenposeDetector:
             return Wholebody.format_result(keypoints_info)
 
     def __call__(
-            self, oriImg, include_body=True, include_hand=False, include_face=False, 
+            self, oriImg, include_body=True, include_hand=True, include_face=True, 
             use_dw_pose=False, json_pose_callback: Callable[[str], None] = None,
         ):
         """

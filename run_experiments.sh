@@ -39,7 +39,7 @@ for ((i=0; i<${#videos[@]}; i++)); do
     current_video=$(basename "${videos[$i]}" .mp4)
     
     # Calculate the index for the image prompt (+2)
-    prompt_idx=$((10#$current_video + 2))
+    prompt_idx=$((10#$current_video + 5))
     prompt_image=$(printf "%05d" $prompt_idx)
     
     # Check if prompt image exists
