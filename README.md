@@ -45,31 +45,15 @@ The goal is to achieve realistic and temporally consistent human motion transfer
    ```bash
    git clone https://github.com/your-username/human-motion-transfer-diffusion.git
    cd human-motion-transfer-diffusion
-   ```
-
-2. Install dependencies:
-   ```bash
    pip install -r requirements.txt
    ```
 
-3. Prepare inputs:
-   - A reference image.
-   - A target video.
+2. Prepare inputs reference image (main content) and target video (motion input), then change the config file in the configs directory 
 
-4. Run the pipeline:
+3. Run the pipeline:
    ```bash
-   python motion_transfer.py --ref_image path/to/image.jpg --target_video path/to/video.mp4
+   python run_experiment.py configs/IP-controlnet.yaml
    ```
-
-## Dependencies
-
-- Python 3.9+
-- PyTorch
-- Hugging Face Diffusers
-- OpenCV
-- ControlNet
-- IP-Adapter
-- Additional libraries for preprocessing (e.g., MediaPipe for pose detection)
 
 ## References
 
@@ -79,8 +63,7 @@ The goal is to achieve realistic and temporally consistent human motion transfer
 
 ## Future Work
 
-- Incorporate multi-view pose estimation for even more robust motion transfer.
-- Explore style and lighting transfer alongside motion.
+- Explore background and lighting transfer alongside motion.
 - Fine-grained control over transfer strength (partial vs full motion adaptation).
 
 ## Acknowledgments
