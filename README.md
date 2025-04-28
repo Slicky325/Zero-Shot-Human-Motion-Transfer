@@ -69,4 +69,3 @@ The goal is to achieve realistic and temporally consistent human motion transfer
 ## Acknowledgments
 
 Thanks to the developers and researchers behind ControlNet, IP-Adapter, and RAVE for making their models and methods publicly available.
-```
